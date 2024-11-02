@@ -46,6 +46,8 @@ model User {
   questions               Question[]
   multipleChoiceQuestions MultipleChoice[]
   multipleChoiceOptions   MultipleChoiceOption[]
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime?               @updatedAt
 }
 
 model VerificationToken {
@@ -61,8 +63,10 @@ model Collection {
   name      String
   questions Question[]
 
-  createdBy User?   @relation(fields: [userId], references: [id])
+  createdBy User?    @relation(fields: [userId], references: [id])
   userId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime? @updatedAt
 }
 
 enum QuestionType {
@@ -78,6 +82,8 @@ model Question {
   multipleChoice MultipleChoice?
   createdBy      User?           @relation(fields: [userId], references: [id])
   userId         String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime?        @updatedAt
 }
 
 model MultipleChoice {
@@ -88,6 +94,8 @@ model MultipleChoice {
   options       MultipleChoiceOption[]
   createdBy     User?                  @relation(fields: [userId], references: [id])
   userId        String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime?               @updatedAt
 }
 
 model MultipleChoiceOption {
@@ -98,4 +106,6 @@ model MultipleChoiceOption {
   multipleChoiceId Int
   createdBy        User?          @relation(fields: [userId], references: [id])
   userId           String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime?       @updatedAt
 }
