@@ -16,6 +16,7 @@ import { DataTableColumnHeader } from "@/components/ui/data-table-column-header"
 import EditCollection from "./edit-collection";
 import { useState } from "react";
 import DeleteCollection from "./delete-collection";
+import Link from "next/link";
 export const columns: ColumnDef<RouterOutput["collection"]["mine"][number]>[] =
   [
     {
@@ -52,12 +53,10 @@ export const columns: ColumnDef<RouterOutput["collection"]["mine"][number]>[] =
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                <DropdownMenuItem
-                  onClick={() => {
-                    //TODO:
-                  }}
-                >
-                  Add New Question
+                <DropdownMenuItem asChild>
+                  <Link href={`/collections/${collectionId}/new-question`}>
+                    Add New Question
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>

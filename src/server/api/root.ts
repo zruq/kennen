@@ -1,13 +1,17 @@
 import { createCallerFactory, createTRPCRouter } from "@/server/api/trpc";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
-import { collectionRouter } from "./routers/collection/collections-router";
+import { collectionRouter } from "./routers/collection/collection-router";
+import { questionRouter } from "./routers/question/question-router";
 
 /**
  * This is the primary router for your server.
  *
  * All routers added in /api/routers should be manually added here.
  */
-export const appRouter = createTRPCRouter({ collection: collectionRouter });
+export const appRouter = createTRPCRouter({
+  collection: collectionRouter,
+  question: questionRouter,
+});
 
 // export type definition of API
 export type AppRouter = typeof appRouter;
