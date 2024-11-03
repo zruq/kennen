@@ -1,5 +1,6 @@
 import { createCallerFactory, createTRPCRouter } from "@/server/api/trpc";
 import { collectionRouter } from "./routers/collection";
+import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 
 /**
  * This is the primary router for your server.
@@ -10,7 +11,8 @@ export const appRouter = createTRPCRouter({ collection: collectionRouter });
 
 // export type definition of API
 export type AppRouter = typeof appRouter;
-
+export type RouterInput = inferRouterInputs<AppRouter>;
+export type RouterOutput = inferRouterOutputs<AppRouter>;
 /**
  * Create a server-side caller for the tRPC API.
  * @example

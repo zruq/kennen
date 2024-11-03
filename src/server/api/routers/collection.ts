@@ -21,7 +21,7 @@ export const collectionRouter = createTRPCRouter({
       });
     }),
 
-  myCollections: protectedProcedure.query(async ({ ctx }) => {
+  mine: protectedProcedure.query(async ({ ctx }) => {
     return ctx.db.collection.findMany({
       orderBy: { createdAt: "desc" },
       where: { createdBy: { id: ctx.session.user.id } },
