@@ -21,6 +21,7 @@ import {
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { Input } from "@/components/ui/input";
 import { DataTableViewOptions } from "@/components/ui/data-table-view-options";
+import NewCollection from "./new-collection";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -42,7 +43,7 @@ export function DataTable<TData, TValue>({
 
   return (
     <div>
-      <div className="flex items-center py-4">
+      <div className="flex items-center justify-between py-4">
         <Input
           placeholder="Filter collections..."
           value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
@@ -51,7 +52,10 @@ export function DataTable<TData, TValue>({
           }
           className="max-w-sm"
         />
-        <DataTableViewOptions table={table} />
+        <div className="flex gap-x-2">
+          <DataTableViewOptions table={table} />
+          <NewCollection />
+        </div>
       </div>
       <div className="rounded-md border">
         <Table>
