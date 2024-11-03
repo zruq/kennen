@@ -1,6 +1,6 @@
 import { createCallerFactory, createTRPCRouter } from "@/server/api/trpc";
-import { collectionRouter } from "./routers/collection";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
+import { collectionRouter } from "./routers/collection/collections-router";
 
 /**
  * This is the primary router for your server.
