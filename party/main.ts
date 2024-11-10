@@ -1,6 +1,7 @@
 import {
   actionSchema,
   type CurrentQuestion,
+  type MessageData,
   type User,
 } from "@/partykit/validators";
 import type { Quiz } from "@/server/api/routers/game/create-game";
@@ -25,12 +26,11 @@ export default class GameRoomServer implements Party.Server {
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
-    console.log("this.room.id:", this.room.id);
-    console.log("this.adminId:", this.adminId);
     if (!this.adminId) {
       conn.close(404);
       return;
     }
+
     if (this.gameStarted) {
       conn.close(401);
       return;
@@ -88,43 +88,52 @@ export default class GameRoomServer implements Party.Server {
         });
       }
     }
-    conn.send(
-      JSON.stringify({
+    const onConnectMessage: Extract<MessageData, { type: "on-connect-data" }> =
+      {
         type: "on-connect-data",
         users,
         adminId: this.adminId,
-        currentQuestion: this.currentQuestion,
-      }),
-    );
-    this.room.broadcast(JSON.stringify({ type: "user-joined", user }), [
-      conn.id,
-    ]);
+      };
+    conn.send(JSON.stringify(onConnectMessage));
+    const userJoinedMessage: Extract<MessageData, { type: "user-joined" }> = {
+      type: "user-joined",
+      user,
+    };
+    this.room.broadcast(JSON.stringify(userJoinedMessage), [conn.id]);
   }
 
   onClose(connection: Party.Connection<{ user: User }>) {
+    if (this.gameStarted) {
+      return;
+    }
     const user = connection.state?.user;
     if (!user) {
       return;
     }
     this.users.delete(user.id);
-    this.room.broadcast(JSON.stringify({ type: "user-left", userId: user.id }));
+    const userLeftMessage: Extract<MessageData, { type: "user-left" }> = {
+      type: "user-left",
+      userId: user.id,
+    };
+    this.room.broadcast(JSON.stringify(userLeftMessage));
   }
   async onRequest(req: Party.Request) {
     if (req.method === "OPTIONS") {
       return new Response(null, { status: 200 });
     }
-
     if (
-      req.method === "POST" &&
-      req.headers.get("Authorization") ===
-        `Bearer ${process.env.PARTYKIT_SECRET}`
+      req.headers.get("Authorization") !==
+      `Bearer ${process.env.PARTYKIT_SECRET}`
     ) {
+      return new Response(null, { status: 401 });
+    }
+    if (req.method === "POST") {
       const data: { questions: Quiz; adminId: string } = await req.json();
       this.questions = data.questions;
       this.adminId = data.adminId;
       return new Response(null, { status: 200 });
     }
-    return new Response(null, { status: 401 });
+    return new Response(null, { status: 404 });
   }
 
   onMessage(message: string, sender: Party.Connection<{ user: User }>) {
@@ -144,13 +153,59 @@ export default class GameRoomServer implements Party.Server {
           return;
         }
         user.isReady = !user.isReady;
-        this.room.broadcast(
-          JSON.stringify({
-            type: "ready-status-changed",
-            userId,
-            isReady: user.isReady,
-          }),
+        const messageData: Extract<
+          MessageData,
+          { type: "ready-status-changed" }
+        > = {
+          type: "ready-status-changed",
+          userId,
+          isReady: user.isReady,
+        };
+        this.room.broadcast(JSON.stringify(messageData));
+        break;
+      }
+      case "start-game": {
+        if (this.gameStarted || this.adminId !== sender.id) {
+          return;
+        }
+        const areAllUsersReady = Array.from(this.users.values()).every(
+          (u) => u.isReady,
         );
+        if (!areAllUsersReady) {
+          return;
+        }
+        this.gameStarted = true;
+        this.currentQuestion = { index: 0, timeLeft: 30 };
+        const question = this.questions[0];
+        if (!question) {
+          return;
+        }
+        const messageData: Extract<MessageData, { type: "new-question" }> = {
+          type: "new-question",
+          question: {
+            ...question,
+            options: question.options.map(
+              ({ isCorrect: _, ...option }) => option,
+            ),
+          },
+          timeleft: this.currentQuestion.timeLeft,
+        };
+        this.room.broadcast(JSON.stringify(messageData));
+        const intervalId = setInterval(() => {
+          if (!this.currentQuestion || this.currentQuestion.timeLeft === 0) {
+            clearInterval(intervalId);
+            return;
+          }
+          this.currentQuestion.timeLeft--;
+          const messageData: Extract<
+            MessageData,
+            { type: "timeleft-changed" }
+          > = {
+            type: "timeleft-changed",
+            timeleft: this.currentQuestion.timeLeft,
+          };
+          this.room.broadcast(JSON.stringify(messageData));
+        }, 1000);
         break;
       }
     }

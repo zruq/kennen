@@ -24,7 +24,7 @@ async function getQuestions(db: PrismaClient) {
   });
   return questions.map(({ text, multipleChoice, id }) => ({
     id,
-    question: text,
+    text,
     options: multipleChoice?.options ?? [],
     choicesLimit: multipleChoice?.choices_limit ?? 1,
   }));

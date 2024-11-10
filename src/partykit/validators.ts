@@ -1,7 +1,9 @@
+import type { Quiz } from "@/server/api/routers/game/create-game";
 import { z } from "zod";
 
 export const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("toggle-ready") }),
+  z.object({ action: z.literal("start-game") }),
 ]);
 
 export const userSchema = z.object({
@@ -17,25 +19,40 @@ export const currentQuestionSchema = z
   })
   .nullable();
 
-export const messageSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("user-joined"), user: userSchema }),
-  z.object({ type: z.literal("user-left"), userId: z.string() }),
-  z.object({
-    type: z.literal("ready-status-changed"),
-    userId: z.string(),
-    isReady: z.boolean(),
-  }),
-  z.object({
-    type: z.literal("on-connect-data"),
-    users: z.array(
-      userSchema.extend({ isReady: z.boolean(), score: z.number() }),
-    ),
-    adminId: z.string(),
-    currentQuestion: currentQuestionSchema,
-  }),
-]);
+type Question = Quiz[number];
 
-export type MessageData = z.infer<typeof messageSchema>;
+export type QuestionWithoutCorrectOptions = Omit<Question, "options"> & {
+  options: Omit<Question["options"][number], "isCorrect">[];
+};
+
+export type MessageData =
+  | {
+      type: "user-joined";
+      user: User;
+    }
+  | {
+      type: "user-left";
+      userId: string;
+    }
+  | {
+      type: "ready-status-changed";
+      userId: string;
+      isReady: boolean;
+    }
+  | {
+      type: "on-connect-data";
+      users: Array<User & { isReady: boolean; score: number }>;
+      adminId: string;
+    }
+  | {
+      type: "new-question";
+      question: QuestionWithoutCorrectOptions;
+      timeleft: number;
+    }
+  | {
+      type: "timeleft-changed";
+      timeleft: number;
+    };
 
 export type User = z.infer<typeof userSchema>;
 

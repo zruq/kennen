@@ -5,7 +5,10 @@ import usePartySocket from "partysocket/react";
 import { useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { type MessageData } from "@/partykit/validators";
+import {
+  type QuestionWithoutCorrectOptions,
+  type MessageData,
+} from "@/partykit/validators";
 
 type GameUser = {
   id: string;
@@ -25,6 +28,9 @@ export default function Game({
     name: string | null | undefined;
   };
 }) {
+  const [timeleft, setTimeleft] = useState<number | null>(null);
+  const [question, setQuestion] =
+    useState<QuestionWithoutCorrectOptions | null>(null);
   const [users, setUsers] = useState<Array<GameUser>>([]);
   const socket = usePartySocket({
     room,
@@ -57,6 +63,15 @@ export default function Game({
           setUsers((users) => users.filter((u) => u.id !== data.userId));
           break;
         }
+        case "new-question": {
+          setQuestion(data.question);
+          setTimeleft(data.timeleft);
+          break;
+        }
+        case "timeleft-changed": {
+          setTimeleft(data.timeleft);
+          break;
+        }
       }
     },
   });
@@ -83,6 +98,22 @@ export default function Game({
           </li>
         ))}
       </ul>
+      <Button
+        onClick={() => {
+          socket.send(JSON.stringify({ action: "start-game" }));
+        }}
+      >
+        Start Game
+      </Button>
+      {timeleft !== null && <div className="text-9xl">{timeleft}</div>}
+      {question && (
+        <div className="">
+          <div className="">{question.text}</div>
+          {question.options.map((option) => (
+            <Button key={option.id}>{option.text}</Button>
+          ))}
+        </div>
+      )}
       <Button
         onClick={() => {
           socket.send(new Date().toISOString());
