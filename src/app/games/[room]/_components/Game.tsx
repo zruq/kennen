@@ -3,20 +3,15 @@ import { Button } from "@/components/ui/button";
 import { env } from "@/env";
 import usePartySocket from "partysocket/react";
 import { useState } from "react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import {
   type QuestionWithoutCorrectOptions,
   type MessageData,
+  type OnConnectMessageData,
 } from "@/partykit/validators";
+import Question from "./Question";
+import Players from "./Players";
 
-type GameUser = {
-  id: string;
-  name?: string | null | undefined;
-  image?: string | null | undefined;
-  isReady: boolean;
-  score: number;
-};
+type Players = OnConnectMessageData["users"];
 
 export default function Game({
   room,
@@ -28,10 +23,12 @@ export default function Game({
     name: string | null | undefined;
   };
 }) {
+  const [gameStarted, setGameStarted] = useState(false);
+  const [adminId, setAdminId] = useState("");
   const [timeleft, setTimeleft] = useState<number | null>(null);
   const [question, setQuestion] =
     useState<QuestionWithoutCorrectOptions | null>(null);
-  const [users, setUsers] = useState<Array<GameUser>>([]);
+  const [players, setPlayers] = useState<Players>([]);
   const socket = usePartySocket({
     room,
     host: env.NEXT_PUBLIC_PARTYKIT_URL,
@@ -42,25 +39,30 @@ export default function Game({
       const data = JSON.parse(event.data) as MessageData;
       switch (data.type) {
         case "on-connect-data": {
-          setUsers(data.users);
+          setPlayers(data.users);
+          setAdminId(data.adminId);
+          break;
+        }
+        case "game-started": {
+          setGameStarted(true);
           break;
         }
         case "ready-status-changed": {
-          setUsers((users) =>
-            users.map((u) =>
+          setPlayers((players) =>
+            players.map((u) =>
               u.id === data.userId ? { ...u, isReady: data.isReady } : u,
             ),
           );
           break;
         }
         case "user-joined": {
-          setUsers((users) =>
-            users.concat({ ...data.user, isReady: false, score: 0 }),
+          setPlayers((players) =>
+            players.concat({ ...data.user, isReady: false, score: 0 }),
           );
           break;
         }
         case "user-left": {
-          setUsers((users) => users.filter((u) => u.id !== data.userId));
+          setPlayers((players) => players.filter((u) => u.id !== data.userId));
           break;
         }
         case "new-question": {
@@ -75,52 +77,45 @@ export default function Game({
       }
     },
   });
+  const isAdmin = user.id === adminId;
   return (
-    <div className="">
-      Game
-      <ul>
-        {users.map((user) => (
-          <li key={user.id}>
-            <Avatar>
-              <AvatarImage src={user.image ?? undefined} />
-              <AvatarFallback>{user?.name?.slice(0, 2)}</AvatarFallback>
-            </Avatar>{" "}
-            {user.name}
-            <button
-              onClick={() => {
-                socket.send(JSON.stringify({ action: "toggle-ready" }));
-              }}
-            >
-              <Badge className={user.isReady ? "bg-green-500" : "bg-gray-500"}>
-                {user.isReady ? "ready" : "not ready"}
-              </Badge>
-            </button>
-          </li>
-        ))}
-      </ul>
-      <Button
-        onClick={() => {
-          socket.send(JSON.stringify({ action: "start-game" }));
+    <div className="flex gap-x-4">
+      <div className="flex-1">
+        {isAdmin && !gameStarted && (
+          <Button
+            onClick={() => {
+              socket.send(JSON.stringify({ action: "start-game" }));
+            }}
+          >
+            Start Game
+          </Button>
+        )}
+        {question && (
+          <Question
+            {...question}
+            timeleft={timeleft}
+            canAnswer={timeleft !== null && timeleft > 0}
+            onAnswer={(optionId) => {
+              socket.send(
+                JSON.stringify({
+                  type: "answer=question",
+                  questionId: question.id,
+                  optionId,
+                }),
+              );
+            }}
+          />
+        )}
+      </div>
+      <Players
+        players={players}
+        onReadyToggle={() => {
+          socket.send(JSON.stringify({ action: "toggle-ready" }));
         }}
-      >
-        Start Game
-      </Button>
-      {timeleft !== null && <div className="text-9xl">{timeleft}</div>}
-      {question && (
-        <div className="">
-          <div className="">{question.text}</div>
-          {question.options.map((option) => (
-            <Button key={option.id}>{option.text}</Button>
-          ))}
-        </div>
-      )}
-      <Button
-        onClick={() => {
-          socket.send(new Date().toISOString());
-        }}
-      >
-        send message
-      </Button>
+        gameStarted={gameStarted}
+        currentPlayerId={user.id}
+        adminId={adminId}
+      />
     </div>
   );
 }

@@ -4,6 +4,11 @@ import { z } from "zod";
 export const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("toggle-ready") }),
   z.object({ action: z.literal("start-game") }),
+  z.object({
+    action: z.literal("answer-question"),
+    questionId: z.number(),
+    optionId: z.number(),
+  }),
 ]);
 
 export const userSchema = z.object({
@@ -26,6 +31,9 @@ export type QuestionWithoutCorrectOptions = Omit<Question, "options"> & {
 };
 
 export type MessageData =
+  | {
+      type: "game-started";
+    }
   | {
       type: "user-joined";
       user: User;
@@ -53,6 +61,33 @@ export type MessageData =
       type: "timeleft-changed";
       timeleft: number;
     };
+
+export type ReadyStatusChangedMessageData = Extract<
+  MessageData,
+  { type: "ready-status-changed" }
+>;
+
+export type OnConnectMessageData = Extract<
+  MessageData,
+  { type: "on-connect-data" }
+>;
+
+export type UserLeftMessageData = Extract<MessageData, { type: "user-left" }>;
+
+export type UserJoinedMessageData = Extract<
+  MessageData,
+  { type: "user-joined" }
+>;
+
+export type NewQuestionMessageData = Extract<
+  MessageData,
+  { type: "new-question" }
+>;
+
+export type TimeLeftChangedMessageData = Extract<
+  MessageData,
+  { type: "timeleft-changed" }
+>;
 
 export type User = z.infer<typeof userSchema>;
 

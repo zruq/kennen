@@ -2,7 +2,12 @@ import {
   actionSchema,
   type CurrentQuestion,
   type MessageData,
+  type NewQuestionMessageData,
+  type OnConnectMessageData,
+  type TimeLeftChangedMessageData,
   type User,
+  type UserJoinedMessageData,
+  type UserLeftMessageData,
 } from "@/partykit/validators";
 import type { Quiz } from "@/server/api/routers/game/create-game";
 import type { Session } from "next-auth";
@@ -15,7 +20,7 @@ export default class GameRoomServer implements Party.Server {
   adminId?: string;
   users: Map<
     string,
-    { isReady: boolean; score: number; answers: Map<string, Array<string>> }
+    { isReady: boolean; score: number; answers: Map<number, Array<number>> }
   >;
 
   constructor(readonly room: Party.Room) {
@@ -88,14 +93,13 @@ export default class GameRoomServer implements Party.Server {
         });
       }
     }
-    const onConnectMessage: Extract<MessageData, { type: "on-connect-data" }> =
-      {
-        type: "on-connect-data",
-        users,
-        adminId: this.adminId,
-      };
+    const onConnectMessage: OnConnectMessageData = {
+      type: "on-connect-data",
+      users,
+      adminId: this.adminId,
+    };
     conn.send(JSON.stringify(onConnectMessage));
-    const userJoinedMessage: Extract<MessageData, { type: "user-joined" }> = {
+    const userJoinedMessage: UserJoinedMessageData = {
       type: "user-joined",
       user,
     };
@@ -111,7 +115,7 @@ export default class GameRoomServer implements Party.Server {
       return;
     }
     this.users.delete(user.id);
-    const userLeftMessage: Extract<MessageData, { type: "user-left" }> = {
+    const userLeftMessage: UserLeftMessageData = {
       type: "user-left",
       userId: user.id,
     };
@@ -180,7 +184,8 @@ export default class GameRoomServer implements Party.Server {
         if (!question) {
           return;
         }
-        const messageData: Extract<MessageData, { type: "new-question" }> = {
+        this.room.broadcast(JSON.stringify({ type: "game-started" }));
+        const messageData: NewQuestionMessageData = {
           type: "new-question",
           question: {
             ...question,
@@ -197,16 +202,21 @@ export default class GameRoomServer implements Party.Server {
             return;
           }
           this.currentQuestion.timeLeft--;
-          const messageData: Extract<
-            MessageData,
-            { type: "timeleft-changed" }
-          > = {
+          const messageData: TimeLeftChangedMessageData = {
             type: "timeleft-changed",
             timeleft: this.currentQuestion.timeLeft,
           };
           this.room.broadcast(JSON.stringify(messageData));
         }, 1000);
         break;
+      }
+      case "answer-question": {
+        const { questionId, optionId } = result.data;
+        const user = this.users.get(userId);
+        if (!user) {
+          return;
+        }
+        user.answers.set(questionId, [optionId]);
       }
     }
   }
