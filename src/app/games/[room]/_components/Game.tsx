@@ -10,6 +10,7 @@ import {
 } from "@/partykit/validators";
 import Question from "./Question";
 import Players from "./Players";
+import { useRouter } from "next/navigation";
 
 type Players = OnConnectMessageData["users"];
 
@@ -23,6 +24,7 @@ export default function Game({
     name: string | null | undefined;
   };
 }) {
+  const router = useRouter();
   const [gameStarted, setGameStarted] = useState(false);
   const [adminId, setAdminId] = useState("");
   const [timeleft, setTimeleft] = useState<number | null>(null);
@@ -33,8 +35,11 @@ export default function Game({
     room,
     host: env.NEXT_PUBLIC_PARTYKIT_URL,
     query: { id: user.id, name: user.name },
-    id: user.id,
 
+    onClose(event) {
+      console.log("event:", event);
+      router.replace("/games");
+    },
     onMessage(event: MessageEvent<string>) {
       const data = JSON.parse(event.data) as MessageData;
       switch (data.type) {
@@ -74,6 +79,20 @@ export default function Game({
           setTimeleft(data.timeleft);
           break;
         }
+        case "scores-updated": {
+          setPlayers((players) =>
+            players.map((player) => {
+              const userScore = data.scores.find((p) => p.userId === player.id);
+              if (userScore !== undefined) {
+                return {
+                  ...player,
+                  score: userScore.score,
+                };
+              }
+              return player;
+            }),
+          );
+        }
       }
     },
   });
@@ -98,7 +117,7 @@ export default function Game({
             onAnswer={(optionId) => {
               socket.send(
                 JSON.stringify({
-                  type: "answer=question",
+                  action: "answer-question",
                   questionId: question.id,
                   optionId,
                 }),

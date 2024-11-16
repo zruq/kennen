@@ -32,6 +32,10 @@ export type QuestionWithoutCorrectOptions = Omit<Question, "options"> & {
 
 export type MessageData =
   | {
+      type: "scores-updated";
+      scores: Array<{ userId: string; score: number }>;
+    }
+  | {
       type: "game-started";
     }
   | {
@@ -61,6 +65,16 @@ export type MessageData =
       type: "timeleft-changed";
       timeleft: number;
     };
+
+export type ScoreUpdatedMessageData = Extract<
+  MessageData,
+  { type: "scores-updated" }
+>;
+
+export type GameStartedMessageData = Extract<
+  MessageData,
+  { type: "game-started" }
+>;
 
 export type ReadyStatusChangedMessageData = Extract<
   MessageData,

@@ -1,9 +1,11 @@
 import {
   actionSchema,
   type CurrentQuestion,
+  type GameStartedMessageData,
   type MessageData,
   type NewQuestionMessageData,
   type OnConnectMessageData,
+  type ScoreUpdatedMessageData,
   type TimeLeftChangedMessageData,
   type User,
   type UserJoinedMessageData,
@@ -169,9 +171,10 @@ export default class GameRoomServer implements Party.Server {
         break;
       }
       case "start-game": {
-        if (this.gameStarted || this.adminId !== sender.id) {
+        if (this.gameStarted || this.adminId !== userId) {
           return;
         }
+
         const areAllUsersReady = Array.from(this.users.values()).every(
           (u) => u.isReady,
         );
@@ -179,35 +182,11 @@ export default class GameRoomServer implements Party.Server {
           return;
         }
         this.gameStarted = true;
-        this.currentQuestion = { index: 0, timeLeft: 30 };
-        const question = this.questions[0];
-        if (!question) {
-          return;
-        }
-        this.room.broadcast(JSON.stringify({ type: "game-started" }));
-        const messageData: NewQuestionMessageData = {
-          type: "new-question",
-          question: {
-            ...question,
-            options: question.options.map(
-              ({ isCorrect: _, ...option }) => option,
-            ),
-          },
-          timeleft: this.currentQuestion.timeLeft,
+        const gameStartedMessage: GameStartedMessageData = {
+          type: "game-started",
         };
-        this.room.broadcast(JSON.stringify(messageData));
-        const intervalId = setInterval(() => {
-          if (!this.currentQuestion || this.currentQuestion.timeLeft === 0) {
-            clearInterval(intervalId);
-            return;
-          }
-          this.currentQuestion.timeLeft--;
-          const messageData: TimeLeftChangedMessageData = {
-            type: "timeleft-changed",
-            timeleft: this.currentQuestion.timeLeft,
-          };
-          this.room.broadcast(JSON.stringify(messageData));
-        }, 1000);
+        this.room.broadcast(JSON.stringify(gameStartedMessage));
+        this.newQuestion();
         break;
       }
       case "answer-question": {
@@ -216,9 +195,97 @@ export default class GameRoomServer implements Party.Server {
         if (!user) {
           return;
         }
+        const question = this.questions.find((q) => q.id === questionId);
+        if (!question) {
+          return;
+        }
+        const selectedOption = question.options.find(
+          (option) => option.id === optionId,
+        );
+        if (!selectedOption) {
+          return;
+        }
         user.answers.set(questionId, [optionId]);
+        break;
       }
     }
+  }
+
+  newQuestion() {
+    if (!this.currentQuestion) {
+      this.currentQuestion = { index: 0, timeLeft: 5 };
+    } else {
+      this.currentQuestion.index++;
+      this.currentQuestion.timeLeft = 5;
+    }
+    const question = this.questions?.[this.currentQuestion.index];
+    if (!question) {
+      return;
+    }
+    const messageData: NewQuestionMessageData = {
+      type: "new-question",
+      question: {
+        ...question,
+        options: question.options.map(({ isCorrect: _, ...option }) => option),
+      },
+      timeleft: this.currentQuestion.timeLeft,
+    };
+    this.room.broadcast(JSON.stringify(messageData));
+    const intervalId = setInterval(() => {
+      if (!this.currentQuestion || this.currentQuestion.timeLeft === 0) {
+        if (this.currentQuestion?.timeLeft === 0) {
+          const scores: ScoreUpdatedMessageData["scores"] = [];
+
+          for (const connection of this.room.getConnections<{
+            user: User;
+          }>()) {
+            const userId = connection.state?.user.id;
+            if (!userId) {
+              continue;
+            }
+            const user = this.users.get(userId);
+            if (!user) {
+              continue;
+            }
+            const question = this.questions?.[this.currentQuestion.index];
+            if (!question) {
+              break;
+            }
+            const correctOptions = question.options.filter(
+              (option) => option.isCorrect,
+            );
+            const answers = user.answers.get(question.id);
+            if (!answers) {
+              continue;
+            }
+            const isCorrect =
+              answers.length === correctOptions.length &&
+              correctOptions.every((option) => answers.includes(option.id)) &&
+              answers.every((optionId) =>
+                correctOptions.some((option) => option.id === optionId),
+              );
+            if (isCorrect) {
+              user.score += 100;
+            }
+            scores.push({ userId, score: user.score });
+          }
+          const messageData: ScoreUpdatedMessageData = {
+            type: "scores-updated",
+            scores,
+          };
+          this.room.broadcast(JSON.stringify(messageData));
+          this.newQuestion();
+        }
+        clearInterval(intervalId);
+        return;
+      }
+      this.currentQuestion.timeLeft--;
+      const messageData: TimeLeftChangedMessageData = {
+        type: "timeleft-changed",
+        timeleft: this.currentQuestion.timeLeft,
+      };
+      this.room.broadcast(JSON.stringify(messageData));
+    }, 1000);
   }
 }
 
