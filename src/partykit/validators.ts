@@ -64,7 +64,17 @@ export type MessageData =
   | {
       type: "timeleft-changed";
       timeleft: number;
+    }
+  | {
+      type: "question-answers";
+      answers: Array<{ optionId: number; users: Array<string> }>;
+      correctAnswer: Array<number>;
     };
+
+export type QuestionAnswersMessageData = Extract<
+  MessageData,
+  { type: "question-answers" }
+>;
 
 export type ScoreUpdatedMessageData = Extract<
   MessageData,

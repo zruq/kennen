@@ -8,7 +8,7 @@ import {
   type MessageData,
   type OnConnectMessageData,
 } from "@/partykit/validators";
-import Question from "./Question";
+import Question, { type CorrectAnswer, type UsersAnswers } from "./Question";
 import Players from "./Players";
 import { useRouter } from "next/navigation";
 
@@ -30,6 +30,9 @@ export default function Game({
   const [timeleft, setTimeleft] = useState<number | null>(null);
   const [question, setQuestion] =
     useState<QuestionWithoutCorrectOptions | null>(null);
+  const [usersAnswers, setUsersAnswers] = useState<UsersAnswers>(null);
+  const [correctAnswer, setCorrectAnswer] = useState<CorrectAnswer>(null);
+
   const [players, setPlayers] = useState<Players>([]);
   const socket = usePartySocket({
     room,
@@ -71,6 +74,8 @@ export default function Game({
           break;
         }
         case "new-question": {
+          setCorrectAnswer(null);
+          setUsersAnswers(null);
           setQuestion(data.question);
           setTimeleft(data.timeleft);
           break;
@@ -92,6 +97,19 @@ export default function Game({
               return player;
             }),
           );
+          break;
+        }
+        case "question-answers": {
+          const usersAnswers: UsersAnswers = new Map();
+          data.answers.forEach(({ users, optionId }) => {
+            usersAnswers.set(
+              optionId,
+              users.map((u) => players.find((p) => p.id === u)!),
+            );
+          });
+          setCorrectAnswer(data.correctAnswer);
+          setUsersAnswers(usersAnswers);
+          break;
         }
       }
     },
@@ -123,6 +141,8 @@ export default function Game({
                 }),
               );
             }}
+            usersAnswers={usersAnswers}
+            correctAnswer={correctAnswer}
           />
         )}
       </div>

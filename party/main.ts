@@ -5,6 +5,7 @@ import {
   type MessageData,
   type NewQuestionMessageData,
   type OnConnectMessageData,
+  type QuestionAnswersMessageData,
   type ScoreUpdatedMessageData,
   type TimeLeftChangedMessageData,
   type User,
@@ -38,46 +39,34 @@ export default class GameRoomServer implements Party.Server {
       return;
     }
 
-    if (this.gameStarted) {
+    const user = await this.getUser(ctx);
+
+    if (!user) {
       conn.close(401);
       return;
     }
 
-    const cookie = ctx.request.headers.get("cookie");
-    const sessionToken = getCookie("authjs.session-token", cookie);
-    let user: User;
-    if (cookie && sessionToken) {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_URL}/api/auth/session`,
-        {
-          headers: {
-            cookie,
-          },
-        },
-      );
-      if (!res.ok) {
-        conn.close(401);
-        return;
-      }
-      const session = (await res.json()) as Session;
-      user = {
-        id: session.user.id,
-        name: session.user.name,
-        image: session.user.image,
-      };
-    } else {
-      const userId = new URL(ctx.request.url).searchParams.get("id") ?? "";
-      const userName = new URL(ctx.request.url).searchParams.get("name") ?? "";
-
-      user = { id: userId, name: userName };
+    if (this.gameStarted && !this.users.has(user.id)) {
+      conn.close(401);
+      return;
     }
+
     conn.setState({ user });
-    this.users.set(user.id, {
-      ...user,
-      answers: new Map(),
-      isReady: false,
-      score: 0,
-    });
+
+    if (!this.users.has(user.id)) {
+      this.users.set(user.id, {
+        answers: new Map(),
+        isReady: false,
+        score: 0,
+      });
+    }
+
+    const userJoinedMessage: UserJoinedMessageData = {
+      type: "user-joined",
+      user,
+    };
+    this.room.broadcast(JSON.stringify(userJoinedMessage), [conn.id]);
+
     const connections = this.room.getConnections<{ user: User }>();
     const users: Array<User & { isReady: boolean; score: number }> = [];
     for (const connection of connections) {
@@ -95,17 +84,13 @@ export default class GameRoomServer implements Party.Server {
         });
       }
     }
+
     const onConnectMessage: OnConnectMessageData = {
       type: "on-connect-data",
       users,
       adminId: this.adminId,
     };
     conn.send(JSON.stringify(onConnectMessage));
-    const userJoinedMessage: UserJoinedMessageData = {
-      type: "user-joined",
-      user,
-    };
-    this.room.broadcast(JSON.stringify(userJoinedMessage), [conn.id]);
   }
 
   onClose(connection: Party.Connection<{ user: User }>) {
@@ -123,6 +108,7 @@ export default class GameRoomServer implements Party.Server {
     };
     this.room.broadcast(JSON.stringify(userLeftMessage));
   }
+
   async onRequest(req: Party.Request) {
     if (req.method === "OPTIONS") {
       return new Response(null, { status: 200 });
@@ -220,6 +206,7 @@ export default class GameRoomServer implements Party.Server {
     }
     const question = this.questions?.[this.currentQuestion.index];
     if (!question) {
+      this.currentQuestion = null;
       return;
     }
     const messageData: NewQuestionMessageData = {
@@ -232,53 +219,18 @@ export default class GameRoomServer implements Party.Server {
     };
     this.room.broadcast(JSON.stringify(messageData));
     const intervalId = setInterval(() => {
-      if (!this.currentQuestion || this.currentQuestion.timeLeft === 0) {
-        if (this.currentQuestion?.timeLeft === 0) {
-          const scores: ScoreUpdatedMessageData["scores"] = [];
-
-          for (const connection of this.room.getConnections<{
-            user: User;
-          }>()) {
-            const userId = connection.state?.user.id;
-            if (!userId) {
-              continue;
-            }
-            const user = this.users.get(userId);
-            if (!user) {
-              continue;
-            }
-            const question = this.questions?.[this.currentQuestion.index];
-            if (!question) {
-              break;
-            }
-            const correctOptions = question.options.filter(
-              (option) => option.isCorrect,
-            );
-            const answers = user.answers.get(question.id);
-            if (!answers) {
-              continue;
-            }
-            const isCorrect =
-              answers.length === correctOptions.length &&
-              correctOptions.every((option) => answers.includes(option.id)) &&
-              answers.every((optionId) =>
-                correctOptions.some((option) => option.id === optionId),
-              );
-            if (isCorrect) {
-              user.score += 100;
-            }
-            scores.push({ userId, score: user.score });
-          }
-          const messageData: ScoreUpdatedMessageData = {
-            type: "scores-updated",
-            scores,
-          };
-          this.room.broadcast(JSON.stringify(messageData));
-          this.newQuestion();
-        }
+      if (!this.currentQuestion) {
         clearInterval(intervalId);
         return;
       }
+      if (this.currentQuestion.timeLeft === 0) {
+        this.updateScores();
+      }
+      if (this.currentQuestion.timeLeft === -5) {
+        this.newQuestion();
+        clearInterval(intervalId);
+      }
+
       this.currentQuestion.timeLeft--;
       const messageData: TimeLeftChangedMessageData = {
         type: "timeleft-changed",
@@ -286,6 +238,103 @@ export default class GameRoomServer implements Party.Server {
       };
       this.room.broadcast(JSON.stringify(messageData));
     }, 1000);
+  }
+
+  updateScores() {
+    if (!this.currentQuestion) {
+      return;
+    }
+    const question = this.questions?.[this.currentQuestion.index];
+    if (!question) {
+      return;
+    }
+
+    const correctOptions = question.options.filter(
+      (option) => option.isCorrect,
+    );
+
+    const scores: ScoreUpdatedMessageData["scores"] = [];
+    const questionAnswers: QuestionAnswersMessageData["answers"] =
+      question.options.map((o) => ({ optionId: o.id, users: [] }));
+
+    for (const connection of this.room.getConnections<{
+      user: User;
+    }>()) {
+      const userId = connection.state?.user.id;
+      if (!userId) {
+        continue;
+      }
+
+      const user = this.users.get(userId);
+      if (!user) {
+        continue;
+      }
+
+      const answers = user.answers.get(question.id);
+      if (!answers) {
+        continue;
+      }
+      answers.forEach((answer) => {
+        questionAnswers.find((a) => a.optionId === answer)?.users?.push(userId);
+      });
+
+      const isCorrect =
+        answers.length === correctOptions.length &&
+        correctOptions.every((option) => answers.includes(option.id)) &&
+        answers.every((optionId) =>
+          correctOptions.some((option) => option.id === optionId),
+        );
+
+      if (isCorrect) {
+        user.score += 100;
+      }
+
+      scores.push({ userId, score: user.score });
+    }
+
+    const messageData: ScoreUpdatedMessageData = {
+      type: "scores-updated",
+      scores,
+    };
+    this.room.broadcast(JSON.stringify(messageData));
+
+    const answersMessageData: QuestionAnswersMessageData = {
+      type: "question-answers",
+      answers: questionAnswers,
+      correctAnswer: correctOptions.map((o) => o.id),
+    };
+    this.room.broadcast(JSON.stringify(answersMessageData));
+  }
+
+  async getUser(ctx: Party.ConnectionContext): Promise<User | null> {
+    const cookie = ctx.request.headers.get("cookie");
+    const sessionToken = getCookie("authjs.session-token", cookie);
+    let user: User;
+    if (cookie && sessionToken) {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_URL}/api/auth/session`,
+        {
+          headers: {
+            cookie,
+          },
+        },
+      );
+      if (!res.ok) {
+        return null;
+      }
+      const session = (await res.json()) as Session;
+      user = {
+        id: session.user.id,
+        name: session.user.name,
+        image: session.user.image,
+      };
+    } else {
+      const userId = new URL(ctx.request.url).searchParams.get("id") ?? "";
+      const userName = new URL(ctx.request.url).searchParams.get("name") ?? "";
+
+      user = { id: userId, name: userName };
+    }
+    return user;
   }
 }
 
