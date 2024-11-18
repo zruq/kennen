@@ -2,15 +2,15 @@
 import { Button } from "@/components/ui/button";
 import { env } from "@/env";
 import usePartySocket from "partysocket/react";
-import { useState } from "react";
+import { useReducer } from "react";
 import {
-  type QuestionWithoutCorrectOptions,
   type MessageData,
   type OnConnectMessageData,
 } from "@/partykit/validators";
-import Question, { type CorrectAnswer, type UsersAnswers } from "./Question";
+import Question from "./Question";
 import Players from "./Players";
 import { useRouter } from "next/navigation";
+import { reducer } from "./GameReducer";
 
 type Players = OnConnectMessageData["users"];
 
@@ -25,15 +25,27 @@ export default function Game({
   };
 }) {
   const router = useRouter();
-  const [gameStarted, setGameStarted] = useState(false);
-  const [adminId, setAdminId] = useState("");
-  const [timeleft, setTimeleft] = useState<number | null>(null);
-  const [question, setQuestion] =
-    useState<QuestionWithoutCorrectOptions | null>(null);
-  const [usersAnswers, setUsersAnswers] = useState<UsersAnswers>(null);
-  const [correctAnswer, setCorrectAnswer] = useState<CorrectAnswer>(null);
+  const [
+    {
+      players,
+      correctAnswer,
+      usersAnswers,
+      question,
+      timeleft,
+      adminId,
+      gameStarted,
+    },
+    dispatch,
+  ] = useReducer(reducer, {
+    gameStarted: false,
+    adminId: null,
+    timeleft: null,
+    question: null,
+    usersAnswers: null,
+    correctAnswer: null,
+    players: [],
+  });
 
-  const [players, setPlayers] = useState<Players>([]);
   const socket = usePartySocket({
     room,
     host: env.NEXT_PUBLIC_PARTYKIT_URL,
@@ -43,78 +55,15 @@ export default function Game({
       console.log("event:", event);
       router.replace("/games");
     },
+
     onMessage(event: MessageEvent<string>) {
       const data = JSON.parse(event.data) as MessageData;
-      switch (data.type) {
-        case "on-connect-data": {
-          setPlayers(data.users);
-          setAdminId(data.adminId);
-          break;
-        }
-        case "game-started": {
-          setGameStarted(true);
-          break;
-        }
-        case "ready-status-changed": {
-          setPlayers((players) =>
-            players.map((u) =>
-              u.id === data.userId ? { ...u, isReady: data.isReady } : u,
-            ),
-          );
-          break;
-        }
-        case "user-joined": {
-          setPlayers((players) =>
-            players.concat({ ...data.user, isReady: false, score: 0 }),
-          );
-          break;
-        }
-        case "user-left": {
-          setPlayers((players) => players.filter((u) => u.id !== data.userId));
-          break;
-        }
-        case "new-question": {
-          setCorrectAnswer(null);
-          setUsersAnswers(null);
-          setQuestion(data.question);
-          setTimeleft(data.timeleft);
-          break;
-        }
-        case "timeleft-changed": {
-          setTimeleft(data.timeleft);
-          break;
-        }
-        case "scores-updated": {
-          setPlayers((players) =>
-            players.map((player) => {
-              const userScore = data.scores.find((p) => p.userId === player.id);
-              if (userScore !== undefined) {
-                return {
-                  ...player,
-                  score: userScore.score,
-                };
-              }
-              return player;
-            }),
-          );
-          break;
-        }
-        case "question-answers": {
-          const usersAnswers: UsersAnswers = new Map();
-          data.answers.forEach(({ users, optionId }) => {
-            usersAnswers.set(
-              optionId,
-              users.map((u) => players.find((p) => p.id === u)!),
-            );
-          });
-          setCorrectAnswer(data.correctAnswer);
-          setUsersAnswers(usersAnswers);
-          break;
-        }
-      }
+      dispatch(data);
     },
   });
+
   const isAdmin = user.id === adminId;
+
   return (
     <div className="flex gap-x-4">
       <div className="flex-1">

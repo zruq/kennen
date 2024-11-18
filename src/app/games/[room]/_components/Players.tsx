@@ -6,7 +6,7 @@ import { CrownIcon } from "lucide-react";
 type PlayersProps = {
   players: OnConnectMessageData["users"];
   gameStarted: boolean;
-  adminId: string;
+  adminId: string | null;
   currentPlayerId: string;
   onReadyToggle: () => void;
 };
