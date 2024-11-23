@@ -23,7 +23,12 @@ export default class GameRoomServer implements Party.Server {
   adminId?: string;
   users: Map<
     string,
-    { isReady: boolean; score: number; answers: Map<number, Array<number>> }
+    {
+      isReady: boolean;
+      score: number;
+      answers: Map<number, Array<number>>;
+      connectionId: string;
+    }
   >;
 
   constructor(readonly room: Party.Room) {
@@ -35,46 +40,55 @@ export default class GameRoomServer implements Party.Server {
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
     if (!this.adminId) {
-      conn.close(404);
+      conn.close();
       return;
     }
 
     const user = await this.getUser(ctx);
 
     if (!user) {
-      conn.close(401);
+      conn.close();
       return;
     }
 
     if (this.gameStarted && !this.users.has(user.id)) {
-      conn.close(401);
+      conn.close();
       return;
     }
 
     conn.setState({ user });
 
-    if (!this.users.has(user.id)) {
+    const users: Array<User & { isReady: boolean; score: number }> = [];
+
+    const userData = this.users.get(user.id);
+
+    if (!userData) {
       this.users.set(user.id, {
         answers: new Map(),
         isReady: false,
         score: 0,
+        connectionId: conn.id,
       });
+      const userJoinedMessage: UserJoinedMessageData = {
+        type: "user-joined",
+        user,
+      };
+      this.room.broadcast(JSON.stringify(userJoinedMessage), [conn.id]);
+    } else {
+      this.room.getConnection(userData.connectionId)?.close();
+      userData.connectionId = conn.id;
     }
 
-    const userJoinedMessage: UserJoinedMessageData = {
-      type: "user-joined",
-      user,
-    };
-    this.room.broadcast(JSON.stringify(userJoinedMessage), [conn.id]);
-
     const connections = this.room.getConnections<{ user: User }>();
-    const users: Array<User & { isReady: boolean; score: number }> = [];
+
     for (const connection of connections) {
       if (connection.state?.user) {
         const user = this.users.get(connection.state.user.id);
-        if (!user) {
+
+        if (!user || user.connectionId !== connection.id) {
           continue;
         }
+
         users.push({
           id: connection.state.user.id,
           name: connection.state.user.name,
@@ -101,6 +115,12 @@ export default class GameRoomServer implements Party.Server {
     if (!user) {
       return;
     }
+
+    const userData = this.users.get(user.id);
+    if (userData && userData.connectionId !== connection.id) {
+      return;
+    }
+
     this.users.delete(user.id);
     const userLeftMessage: UserLeftMessageData = {
       type: "user-left",
@@ -329,8 +349,10 @@ export default class GameRoomServer implements Party.Server {
         image: session.user.image,
       };
     } else {
-      const userId = new URL(ctx.request.url).searchParams.get("id") ?? "";
-      const userName = new URL(ctx.request.url).searchParams.get("name") ?? "";
+      const userId =
+        new URL(ctx.request.url).searchParams.get("id") ?? crypto.randomUUID();
+      const userName =
+        new URL(ctx.request.url).searchParams.get("name") ?? "Anonymous";
 
       user = { id: userId, name: userName };
     }
